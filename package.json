@@ -152,7 +152,7 @@
     "@types/express": "^5.0.0",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.0.0",
-    "@types/nodemailer": "^7.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.15.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
