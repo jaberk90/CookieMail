@@ -278,3 +278,22 @@ test('reply metadata is taken from the original mail, never trusted from the bro
     await f.kit.close();
   }
 });
+
+test('worker batch limit includes failed delivery attempts', async () => {
+  const f = fixture({ fail: true });
+  try {
+    for (let i = 0; i < 3; i++)
+      await f.kit.queue({
+        idempotencyKey: randomUUID(),
+        to: 'to@example.com',
+        subject: 'Message ' + i,
+        text: 'Hello',
+      });
+    await f.kit.flush(1);
+    const jobs = (await request(f.app).get('/mail/outbox').set('x-user', 'admin')).body;
+    assert.equal(jobs.filter((j: any) => j.status === 'uncertain').length, 1);
+    assert.equal(jobs.filter((j: any) => j.status === 'queued').length, 2);
+  } finally {
+    await f.kit.close();
+  }
+});

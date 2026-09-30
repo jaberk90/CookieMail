@@ -243,11 +243,12 @@ export function createCookieMail(config: CookieMailConfig) {
   async function flush(limit = 10) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('limit must be 1-50');
     let sent = 0,
+      processed = 0,
       skipped = 0;
     for (const job of (await all('job-')).sort((a, b) =>
       String(a.createdAt).localeCompare(String(b.createdAt)),
     )) {
-      if (sent + skipped >= limit) break;
+      if (processed >= limit) break;
       const key = 'job-' + job.id;
       const owner = randomUUID();
       const claimed = await atomic(store, workspace, async (tx) => {
@@ -269,7 +270,8 @@ export function createCookieMail(config: CookieMailConfig) {
       if (!claimed) continue;
       const j = claimed as any;
       try {
-        while (j.cursor < j.recipients.length && sent + skipped < limit) {
+        while (j.cursor < j.recipients.length && processed < limit) {
+          processed++;
           const recipient = j.recipients[j.cursor];
           const sub = recipient.id ? await read('subscriber-' + recipient.id) : undefined;
           if (recipient.id && sub?.status !== 'subscribed') {
@@ -371,7 +373,7 @@ export function createCookieMail(config: CookieMailConfig) {
   });
   router.use((req, res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      if (res.locals.user.role !== 'admin')
+      if (res.locals.user.role !== 'admin' && req.path !== '/preview')
         throw new HttpError(403, 'Administrator access required');
       if (req.get('X-CookieMail') !== '1' || req.get('Sec-Fetch-Site') === 'cross-site')
         throw new HttpError(403, 'Write request rejected');

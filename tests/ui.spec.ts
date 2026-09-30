@@ -104,3 +104,23 @@ test('subscription form captures names and explicit consent', async ({ page }, i
     fullPage: true,
   });
 });
+
+test('switching collections never renders rows from the previous view', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
+  for (let i = 0; i < 3; i++) {
+    await page
+      .getByRole('navigation', { name: 'Mail navigation' })
+      .getByRole('button', { name: 'Templates', exact: true })
+      .click();
+    await expect(page.locator('.cm-template-card').first()).toBeVisible();
+    await page
+      .getByRole('navigation', { name: 'Mail navigation' })
+      .getByRole('button', { name: 'Inbox', exact: true })
+      .click();
+    await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
+  }
+  expect(errors).toEqual([]);
+});

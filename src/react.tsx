@@ -164,6 +164,7 @@ export function CookieMail({
   const [boot, setBoot] = useState<any>(null),
     [view, setView] = useState<View>('inbox'),
     [items, setItems] = useState<any[]>([]),
+    [loadedView, setLoadedView] = useState<View>('inbox'),
     [templates, setTemplates] = useState<Template[]>([]),
     [query, setQuery] = useState(''),
     [unread, setUnread] = useState(false),
@@ -179,7 +180,9 @@ export function CookieMail({
     [compose, setCompose] = useState<{ to?: string; subject?: string; replyToId?: string } | null>(
       null,
     );
-  const base = basePath.replace(/\/+$/, '');
+  let baseEnd = basePath.length;
+  while (baseEnd > 0 && basePath[baseEnd - 1] === '/') baseEnd--;
+  const base = basePath.slice(0, baseEnd);
   const api = useCallback(
     async <T,>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> => {
       if (!/^\/(?!\/)/.test(base) || /[?#\\]/.test(base))
@@ -268,6 +271,7 @@ export function CookieMail({
         .then((data) => {
           if (controller.signal.aborted) return;
           if (!Array.isArray(data)) throw new Error('Invalid list response from mailbox API');
+          setLoadedView(view);
           setItems(data);
         })
         .catch((e) => {
@@ -284,9 +288,11 @@ export function CookieMail({
   }, [api, view, query, unread, limit, revision]);
   const admin = boot?.user.role === 'admin';
   const visible =
-    view === 'inbox'
-      ? items
-      : items.filter((v) => JSON.stringify(v).toLowerCase().includes(query.toLowerCase()));
+    loadedView !== view
+      ? []
+      : view === 'inbox'
+        ? items
+        : items.filter((v) => JSON.stringify(v).toLowerCase().includes(query.toLowerCase()));
   const titles = {
     inbox: ['Your inbox. A little more human.', 'A clear space for your next great conversation.'],
     subscribers: ['Good people. Growing together.', 'A thoughtful audience, organized your way.'],
