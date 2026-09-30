@@ -1,0 +1,11 @@
+/.idea/
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+data/
+*.sqlite*
+test-results/
+playwright-report/
+.DS_Store

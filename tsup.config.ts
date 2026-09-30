@@ -1,0 +1,33 @@
+import { defineConfig } from 'tsup';
+export default defineConfig({
+  entry: [
+    'src/index.ts',
+    'src/react.tsx',
+    'src/sqlite.ts',
+    'src/firestore.ts',
+    'src/dynamodb.ts',
+    'src/cosmos.ts',
+    'src/postgres.ts',
+  ],
+  format: ['esm', 'cjs'],
+  dts: true,
+  clean: true,
+  sourcemap: true,
+  target: 'node22',
+  removeNodeProtocol: false,
+  external: [
+    '@google-cloud/firestore',
+    '@aws-sdk/lib-dynamodb',
+    '@azure/cosmos',
+    'pg',
+    'react',
+    'react/jsx-runtime',
+    'express',
+    'express-rate-limit',
+    'imapflow',
+    'mailparser',
+    'nodemailer',
+    'sanitize-html',
+    'zod',
+  ],
+});

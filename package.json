@@ -1,0 +1,184 @@
+{
+  "name": "cookiemail",
+  "version": "0.1.0",
+  "description": "An embeddable inbox, subscriber audience and visual email studio for Node.js and React.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
+    },
+    "./react.css": "./dist/react.css",
+    "./sqlite": {
+      "import": {
+        "types": "./dist/sqlite.d.ts",
+        "default": "./dist/sqlite.js"
+      },
+      "require": {
+        "types": "./dist/sqlite.d.cts",
+        "default": "./dist/sqlite.cjs"
+      }
+    },
+    "./firestore": {
+      "import": {
+        "types": "./dist/firestore.d.ts",
+        "default": "./dist/firestore.js"
+      },
+      "require": {
+        "types": "./dist/firestore.d.cts",
+        "default": "./dist/firestore.cjs"
+      }
+    },
+    "./dynamodb": {
+      "import": {
+        "types": "./dist/dynamodb.d.ts",
+        "default": "./dist/dynamodb.js"
+      },
+      "require": {
+        "types": "./dist/dynamodb.d.cts",
+        "default": "./dist/dynamodb.cjs"
+      }
+    },
+    "./cosmos": {
+      "import": {
+        "types": "./dist/cosmos.d.ts",
+        "default": "./dist/cosmos.js"
+      },
+      "require": {
+        "types": "./dist/cosmos.d.cts",
+        "default": "./dist/cosmos.cjs"
+      }
+    },
+    "./postgres": {
+      "import": {
+        "types": "./dist/postgres.d.ts",
+        "default": "./dist/postgres.js"
+      },
+      "require": {
+        "types": "./dist/postgres.d.cts",
+        "default": "./dist/postgres.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs",
+    "examples/integration.ts",
+    "examples/footer-signup.tsx"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-css.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:ui": "playwright test",
+    "check": "npm run typecheck && npm test && npm run build",
+    "demo": "tsx examples/demo.ts",
+    "prepack": "npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:package": "npm run build && node scripts/package-smoke.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "imapflow": "^2.1.2",
+    "mailparser": "^3.9.32",
+    "nodemailer": "^10.0.13",
+    "sanitize-html": "^2.17.7",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1142.0",
+    "@aws-sdk/lib-dynamodb": "^3.1142.0",
+    "@azure/cosmos": "^4.10.1",
+    "@google-cloud/firestore": "^9.3.0",
+    "pg": "^8.23.0",
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "@google-cloud/firestore": {
+      "optional": true
+    },
+    "@aws-sdk/lib-dynamodb": {
+      "optional": true
+    },
+    "@aws-sdk/client-dynamodb": {
+      "optional": true
+    },
+    "@azure/cosmos": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1142.0",
+    "@aws-sdk/lib-dynamodb": "^3.1142.0",
+    "@azure/cosmos": "^4.10.1",
+    "@google-cloud/firestore": "^9.3.0",
+    "@playwright/test": "^1.58.2",
+    "@types/express": "^5.0.0",
+    "@types/mailparser": "^3.4.6",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^7.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/sanitize-html": "^2.16.0",
+    "@types/supertest": "^6.0.0",
+    "esbuild": "^0.28.1",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "supertest": "^7.0.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaberk90/CookieMail.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "overrides": {
+    "gaxios": {
+      "uuid": "^11.1.1"
+    },
+    "esbuild": "^0.28.1"
+  }
+}
