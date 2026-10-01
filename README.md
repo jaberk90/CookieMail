@@ -256,3 +256,31 @@ npm pack --dry-run             # inspect publish contents
 ```
 
 [IMAP transport reference](https://imapflow.com/docs/api/imapflow-client/) · [SMTP transport reference](https://nodemailer.com/smtp)
+
+## Server environment variables
+
+Map these into `createCookieMail()` / `imapSmtpProvider()` in your host app; CookieMail does not automatically load environment variables.
+
+```env
+MAIL_PUBLIC_ORIGIN=https://your-app.example
+MAIL_PUBLIC_BASE_PATH=/mail-public
+MAIL_WORKSPACE=my-company
+MAIL_FROM=Your Company <hello@your-domain.example>
+IMAP_HOST=imap.your-provider.example
+IMAP_PORT=993
+IMAP_USER=hello@your-domain.example
+SMTP_HOST=smtp.your-provider.example
+SMTP_PORT=587
+SMTP_USER=hello@your-domain.example
+```
+
+Store `IMAP_PASS` and `SMTP_PASS` as server secrets. Firestore uses your project identity, DynamoDB uses `AWS_REGION` / a table and IAM identity, Cosmos uses its configured database/container and credentials, and PostgreSQL uses `DATABASE_URL`. See [cloud configuration](docs/CLOUD.md).
+
+For GitHub Actions, adapt the repository/environment to your deployment workflow:
+
+```sh
+gh variable set IMAP_HOST --repo OWNER/REPO --env production --body 'imap.your-provider.example'
+gh secret set IMAP_PASS --repo OWNER/REPO --env production
+```
+
+`gh secret set` prompts for the secret. GitHub settings must also be forwarded by your host deployment workflow to the runtime. CookieStocks-specific commands, footer wiring and `/cookieCommunication` access are documented in its [CookieMail integration guide](https://github.com/jaberk90/CookieStocks/blob/main/docs/setup/16-cookiemail.md).
