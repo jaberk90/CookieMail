@@ -1,35 +1,66 @@
-name: Publish npm release
+name: Publish release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published stable release tag to retry
+        required: true
 permissions:
   contents: read
+concurrency:
+  group: publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
 jobs:
   publish:
-    if: github.event.release.prerelease == false && github.event.release.draft == false
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.prerelease == false && github.event.release.draft == false)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: npm
+            registry: https://registry.npmjs.org
+          - target: github
+            registry: https://npm.pkg.github.com
     runs-on: ubuntu-latest
     environment: npm
     permissions:
       contents: read
       id-token: write
+      packages: write
     steps:
+      - name: Require an existing stable release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        with:
+          script: |
+            const {data} = await github.rest.repos.getReleaseByTag({...context.repo, tag: process.env.RELEASE_TAG});
+            if (data.draft || data.prerelease) throw new Error('A published stable release is required');
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          registry-url: ${{ matrix.registry }}
           cache: npm
       - run: npm install -g npm@12.2.0
       - name: Verify release version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           node --input-type=module -e "import fs from 'node:fs'; const p=JSON.parse(fs.readFileSync('package.json')); const lock=JSON.parse(fs.readFileSync('package-lock.json')); if(process.env.RELEASE_TAG!=='v'+p.version || lock.version!==p.version || lock.packages[''].version!==p.version) process.exit(1)"
       - run: npm ci
       - run: npm run check
       - run: npm audit --audit-level=low
-      - run: npm publish --provenance --access public
+      - name: Scope the GitHub package
+        if: matrix.target == 'github'
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; for(const file of ['package.json','package-lock.json']) { const p=JSON.parse(fs.readFileSync(file));p.name='@jaberk90/cookiemail';if(p.packages)p.packages[''].name=p.name;fs.writeFileSync(file,JSON.stringify(p,null,2)+'\n'); }"
+      - name: Publish package if version is absent
+        run: node scripts/publish-package.mjs "$PUBLISH_REGISTRY"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM }}
+          PUBLISH_REGISTRY: ${{ matrix.registry }}
+          NODE_AUTH_TOKEN: ${{ matrix.target == 'github' && secrets.GITHUB_TOKEN || secrets.NPM }}

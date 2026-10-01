@@ -1,6 +1,6 @@
 {
   "name": "cookiemail",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "An embeddable inbox, subscriber audience and visual email studio for Node.js and React.",
   "type": "module",
   "license": "MIT",
@@ -180,5 +180,27 @@
       "uuid": "^11.1.1"
     },
     "esbuild": "^0.28.1"
+  },
+  "keywords": [
+    "email",
+    "inbox",
+    "imap",
+    "smtp",
+    "newsletter",
+    "subscribers",
+    "email-templates",
+    "react",
+    "nodejs",
+    "firebase",
+    "firestore",
+    "aws",
+    "dynamodb",
+    "azure",
+    "cosmosdb",
+    "postgresql"
+  ],
+  "homepage": "https://github.com/jaberk90/CookieMail#readme",
+  "bugs": {
+    "url": "https://github.com/jaberk90/CookieMail/issues"
   }
 }

@@ -16,7 +16,7 @@ An embeddable email workspace for Node.js and React: a private inbox, tagged sub
 - Use `{{firstName}}`, `{{productName}}`, or other named variables. The composer automatically creates the required input fields. Tag campaigns fill `firstName`, `lastName`, and `email` from subscribers.
 - Use SQLite locally or **Firestore (Firebase/Google Cloud), DynamoDB (AWS), Cosmos DB (Azure), PostgreSQL** in production.
 
-This is a first-version source implementation (`0.1.0`), not a claim that a package has been published under this name. The core is verified locally with a fake mailbox. Real IMAP/SMTP delivery, cloud IAM and deployed cloud databases require your environment’s acceptance checks before production use.
+CookieMail 1.0 provides an embeddable mail workspace with host-owned authentication. Automated tests cover the core with a fake mailbox and database contracts. Real IMAP/SMTP delivery, cloud IAM and deployed cloud databases require your environment’s acceptance checks before production use.
 
 ## Run the demo
 
@@ -32,16 +32,22 @@ Open **http://127.0.0.1:3177**. The demo binds only to loopback, signs in a fake
 
 ## Install in your Node app
 
-Until a registry release exists, build and install a local tarball:
+Install from npm:
+
+```sh
+npm install cookiemail@1.0.0
+```
+
+For local package development, build and install a tarball:
 
 ```sh
 # In CookieMail
 npm pack
 # In your Node app, use the resulting absolute path
-npm install /absolute/path/to/cookiemail-0.1.0.tgz
+npm install /absolute/path/to/cookiemail-1.0.0.tgz
 ```
 
-Once your release is published, `npm install cookiemail` replaces the tarball step. React is an optional peer; install it only for the UI. Install only the database SDK you use. Import the server API only in server code, never a browser bundle.
+React is an optional peer; install it only for the UI. Install only the database SDK you use. Import the server API only in server code, never a browser bundle.
 
 ```ts
 import express from 'express';
