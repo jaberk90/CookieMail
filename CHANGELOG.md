@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0
+
+- Compact workspace summary cards on desktop and mobile.
+- Move inbox email to provider Trash with explicit confirmation and UID-validity checks.
+- Per-recipient sent-message snapshots, a Sent reader, and idempotent resends preserving original content and campaign unsubscribe suppression.
+- Durable future scheduling for individual emails and tag campaigns, UTC timestamps, rescheduling and cancellation before delivery starts.
+- Atomic due-job claiming and conservative uncertain-delivery handling remain shared across all five storage adapters.
+- Updated README, cloud-worker guidance, migration notes and desktop/mobile screenshots.
+
+Upgrade API, React/CSS and workers together. Existing data stays compatible; sent snapshots begin with v2 deliveries and do not import historical/provider Sent mail. See [release notes](docs/RELEASE-2.0.0.md).
+
 ## 1.0.0
 
 - Stable Node/React package API for the inbox, subscriber audience, template studio and durable delivery queue.

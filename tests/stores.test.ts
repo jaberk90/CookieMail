@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { atomic, documents, type MailStore } from '../src/store.js';
 import { sqliteStore } from '../src/sqlite.js';
+import { createCookieMail } from '../src/index.js';
 async function contract(store: MailStore) {
   const t = 'test-' + randomUUID();
   await atomic(store, t, async (tx) => {
@@ -40,6 +41,41 @@ async function contract(store: MailStore) {
     false,
   );
   assert.equal((await store.read(t, 'item-1'))?.value.count, 4);
+  // Exercise the multi-document job + sent-copy transaction on every adapter.
+  let sends = 0;
+  const mail = createCookieMail({
+    store,
+    workspace: t + '-delivery',
+    publicOrigin: 'https://mail.example.com',
+    auth: () => null,
+    provider: {
+      list: async () => [],
+      get: async () => {
+        throw new Error('Unused');
+      },
+      markRead: async () => {},
+      send: async () => {
+        sends++;
+      },
+    },
+  });
+  const job = await mail.queue({
+    idempotencyKey: randomUUID(),
+    to: 'test@example.com',
+    subject: 'Store contract',
+    text: 'Persist the exact body',
+    scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+  });
+  assert.equal((await mail.flush()).sent, 0);
+  await mail.reschedule(String(job.id), null);
+  await Promise.all([mail.flush(), mail.flush()]);
+  assert.equal(sends, 1);
+  const copies = await mail.listSent();
+  assert.equal(copies.length, 1);
+  assert.equal((await mail.getSent(String(copies[0].id))).text, 'Persist the exact body');
+  await mail.resend(String(copies[0].id), { idempotencyKey: randomUUID() });
+  await mail.flush();
+  assert.equal(sends, 2);
 }
 test('SQLite store contract', async () => {
   const store = sqliteStore(':memory:');

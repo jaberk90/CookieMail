@@ -10,6 +10,7 @@ export function imapSmtpProvider(config: {
     port?: number;
     auth: { user: string; pass?: string; accessToken?: string };
     mailbox?: string;
+    trashMailbox?: string;
   };
   smtp: SMTPTransport.Options;
   from: string;
@@ -47,6 +48,7 @@ export function imapSmtpProvider(config: {
     }
   }
   const uid = (client: ImapFlow, id: string) => {
+    if (!/^\d+\.[1-9]\d*$/.test(id)) throw new Error('Invalid message identifier');
     const [validity, n] = id.split('.');
     if (
       !client.mailbox ||
@@ -116,6 +118,23 @@ export function imapSmtpProvider(config: {
     async markRead(id) {
       await inbox(async (client) => {
         await client.messageFlagsAdd(uid(client, id), ['\\Seen'], { uid: true });
+      });
+    },
+    async trash(id) {
+      await inbox(async (client) => {
+        const n = uid(client, id);
+        const destination =
+          config.imap.trashMailbox ||
+          (await client.list()).find((m) => m.specialUse === '\\Trash')?.path;
+        if (
+          !destination ||
+          destination.toLowerCase() === (config.imap.mailbox || 'INBOX').toLowerCase()
+        )
+          throw new Error(
+            'Configure an existing trashMailbox; permanent deletion is not supported',
+          );
+        const result = await client.messageMove(n, destination, { uid: true });
+        if (!result) throw new Error('Message could not be moved to Trash; refresh the inbox');
       });
     },
     async send(m) {

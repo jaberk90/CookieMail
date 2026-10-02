@@ -8,7 +8,10 @@ An embeddable email workspace for Node.js and React: a private inbox, tagged sub
 
 ## What you can do
 
-- Fetch the latest **25 or 50** matching inbox messages. Search subject/sender, filter unread, read and reply.
+- Fetch the latest **25 or 50** matching inbox messages. Search subject/sender, filter unread, read, reply and move emails to Trash.
+- View saved per-recipient sent emails and resend a copy with confirmation.
+- Schedule emails or tag campaigns, change their send time, or cancel before delivery starts.
+- Compact summary cards leave more room for your inbox on desktop and mobile.
 - Compose plain text, sanitized HTML, or a saved template. Review the recipient/audience before queuing.
 - Collect first name, last name and email with explicit consent; organize subscribers with custom tags.
 - Send separate personalized messages to everyone subscribed to a tag. Subscriber addresses are never exposed in a shared To/CC field.
@@ -16,7 +19,7 @@ An embeddable email workspace for Node.js and React: a private inbox, tagged sub
 - Use `{{firstName}}`, `{{productName}}`, or other named variables. The composer automatically creates the required input fields. Tag campaigns fill `firstName`, `lastName`, and `email` from subscribers.
 - Use SQLite locally or **Firestore (Firebase/Google Cloud), DynamoDB (AWS), Cosmos DB (Azure), PostgreSQL** in production.
 
-CookieMail 1.0 provides an embeddable mail workspace with host-owned authentication. Automated tests cover the core with a fake mailbox and database contracts. Real IMAP/SMTP delivery, cloud IAM and deployed cloud databases require your environment’s acceptance checks before production use.
+CookieMail 2.0 provides an embeddable mail workspace with host-owned authentication. Automated tests cover the core with a fake mailbox and database contracts. Real IMAP/SMTP delivery, cloud IAM and deployed cloud databases require your environment’s acceptance checks before production use.
 
 ## Run the demo
 
@@ -35,7 +38,7 @@ Open **http://127.0.0.1:3177**. The demo binds only to loopback, signs in a fake
 Install from npm:
 
 ```sh
-npm install cookiemail@1.0.0
+npm install cookiemail@2.0.0
 ```
 
 For local package development, build and install a tarball:
@@ -44,7 +47,7 @@ For local package development, build and install a tarball:
 # In CookieMail
 npm pack
 # In your Node app, use the resulting absolute path
-npm install /absolute/path/to/cookiemail-1.0.0.tgz
+npm install /absolute/path/to/cookiemail-2.0.0.tgz
 ```
 
 React is an optional peer; install it only for the UI. Install only the database SDK you use. Import the server API only in server code, never a browser bundle.
@@ -70,6 +73,7 @@ const mail = createCookieMail({
     from: 'Your Company <hello@your-domain.example>',
     imap: {
       host: process.env.IMAP_HOST!,
+      trashMailbox: process.env.IMAP_TRASH_MAILBOX, // optional; otherwise detects IMAP \\Trash
       auth: { user: process.env.IMAP_USER!, pass: process.env.IMAP_PASS! },
     },
     smtp: {
@@ -85,7 +89,7 @@ app.use('/api/mail', mail.router); // private, host-authenticated operator API
 app.use('/mail-public', mail.publicRouter); // ONLY token-based unsubscribe endpoints
 ```
 
-`role: 'viewer'` permits read-only access to inbox/audience/templates/outbox; only `admin` can write or send. Mount the private React page behind your host’s authorization too. Credentials remain in server environment/secret manager configuration. No public inbox or subscriber-list route is created.
+`role: 'viewer'` permits read-only access to inbox/audience/templates/outbox/sent; only `admin` can write or send. Mount the private React page behind your host’s authorization too. Credentials remain in server environment/secret manager configuration. No public inbox or subscriber-list route is created.
 
 `auth` must verify session cookies or bearer tokens, permissions and any MFA policy itself. Do not trust a supplied user ID, tenant or role. One configured instance connects one mailbox and one trusted `workspace` partition. For multiple tenants, select instances using a verified server-side tenant mapping.
 
@@ -210,6 +214,59 @@ Each campaign email includes an unsubscribe link and List-Unsubscribe headers. T
 
 Variable values are escaped as text, and links must resolve to HTTP(S). Blank/missing variables prevent queuing. Images use HTTPS URLs you own; uploads, arbitrary custom widgets and an image library are not included. Reader/preview iframes are sandboxed and remote images blocked, while the sent email contains the actual image URL. Rich email layout support is intentionally restricted for security and client compatibility.
 
+## Schedule, view, resend and remove email
+
+**Schedule:** Compose an email (text, HTML or template), choose **Delivery time → Schedule for later**, enter a date/time, review and **Confirm schedule**. Times are entered in the browser’s displayed time zone and stored as UTC. In **Outbox**, use **Change schedule** or **Cancel send** before sending starts. **Send now** means the next worker run; **Process next 10** also respects future schedules.
+
+**Sent:** Open **Sent**, select a message, then **Resend email → Confirm resend** to queue a new copy to the same recipient. You can schedule the resend too. The saved subject/body preserve the original personalized content; resending does not re-render an edited template or use a subscriber’s changed name. Campaign unsubscribe checks still run before queueing and immediately before delivery. Each resend receives a new Message-ID and its own history record. Provider acceptance is not an inbox-delivery/read receipt.
+
+**Remove from inbox:** Open an email, choose **Move to Trash**, then confirm. The IMAP adapter uses the provider’s special-use Trash folder, or `imap.trashMailbox` (for example a provider-specific path passed through `IMAP_TRASH_MAILBOX`). If no Trash folder is available, configure an existing folder; CookieMail never falls back to permanent deletion. Recover moved messages in your provider’s mailbox UI. Custom providers can implement `trash(id)`; without it the button stays hidden and the API returns 501.
+
+![Schedule an email](docs/screenshots/schedule-desktop.png)
+![View a saved sent email](docs/screenshots/sent-reader-desktop.png)
+
+[Mobile scheduling](docs/screenshots/schedule-mobile.png) · [Mobile sent history](docs/screenshots/sent-mobile.png) · [Trash confirmation](docs/screenshots/trash-confirm-desktop.png) · [Scheduled outbox](docs/screenshots/outbox-scheduled-desktop.png)
+
+### Call directly from Node
+
+```ts
+const job = await mail.queue({
+  idempotencyKey: crypto.randomUUID(),
+  to: 'alex@example.com',
+  subject: 'A note for later',
+  text: 'The full message.',
+  scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+});
+await mail.reschedule(String(job.id), new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
+// await mail.cancel(String(job.id)); // only before sending starts
+// await mail.reschedule(String(job.id), null); // queue for the next worker run
+
+const sent = await mail.listSent();
+if (sent.length) {
+  const copy = await mail.getSent(String(sent[0].id));
+  console.log(copy.subject, copy.text);
+  // Explicitly request another copy, using the same UUID when retrying this request:
+  await mail.resend(copy.id, { idempotencyKey: crypto.randomUUID() });
+}
+// await mail.trash(inboxMessage.id); // moves an inbox email to Trash
+```
+
+Scheduling accepts ISO timestamps with a time-zone offset, in the future and within 366 days. The worker may run later than the requested time; it never intentionally sends before it. Missing/stopped workers do not deliver mail. Browser tabs need not remain open. The same queue and worker work with all five store adapters; see [cloud worker setup](docs/CLOUD.md#scheduled-email-workers).
+
+### Private API additions
+
+Paths below are relative to your mounted private router. All reads require an authenticated operator; mutations require an admin and the existing origin/JSON/`X-CookieMail` protections.
+
+| Method | Path                   | Purpose                                                            |
+| ------ | ---------------------- | ------------------------------------------------------------------ |
+| DELETE | `/inbox/:id`           | Move an inbox email to Trash                                       |
+| GET    | `/sent`                | List accepted per-recipient snapshots                              |
+| GET    | `/sent/:id`            | Read a saved subject/body                                          |
+| POST   | `/sent/:id/resend`     | Queue another copy; body: `idempotencyKey`, optional `scheduledAt` |
+| POST   | `/send`                | Existing queue API; now accepts optional `scheduledAt`             |
+| PATCH  | `/outbox/:id/schedule` | Body: `scheduledAt` ISO string, or `null` for the next worker run  |
+| DELETE | `/outbox/:id`          | Cancel an unstarted job; does not recall delivered mail            |
+
 ## Deliver queued email
 
 ```ts
@@ -250,7 +307,7 @@ See [Cloud setup](docs/CLOUD.md) for Firebase Functions, Cloud Run, AWS and Azur
 
 See [Security](SECURITY.md) and [Publishing](docs/PUBLISHING.md). The repository includes CI, nightly dependency audit, daily Dependabot PRs and tag-based npm publishing with provenance. No mailbox credentials or cloud accounts are shipped.
 
-Current scope: one inbox folder; no attachment download/upload, mailbox deletion, archive/move, sent-folder IMAP append, native OAuth onboarding, double opt-in, scheduling per campaign, analytics/open tracking or provider webhooks. “Sent & queued” is CookieMail’s delivery history, not the provider’s entire Sent folder. Search is subject/sender through IMAP and a local filter for the loaded audience/templates. Receiving from an existing mailbox is supported; operating an email server is not.
+Current scope: one inbox folder with safe move-to-Trash; no permanent deletion, attachment download/upload, arbitrary folder moves, sent-folder IMAP append, native OAuth onboarding, double opt-in, analytics/open tracking or provider webhooks. “Sent” contains per-recipient copies accepted through CookieMail v2, not the provider’s entire Sent folder. Version 1 sends remain in Outbox activity, but cannot be retroactively reconstructed as exact sent copies. Search is subject/sender through IMAP and a local filter for the loaded audience/templates. Receiving from an existing mailbox is supported; operating an email server is not.
 
 ## Develop
 
@@ -290,3 +347,11 @@ gh secret set IMAP_PASS --repo OWNER/REPO --env production
 ```
 
 `gh secret set` prompts for the secret. GitHub settings must also be forwarded by your host deployment workflow to the runtime. CookieStocks-specific commands, footer wiring and `/cookieCommunication` access are documented in its [CookieMail integration guide](https://github.com/jaberk90/CookieStocks/blob/main/docs/setup/16-cookiemail.md).
+
+## Upgrading from 1.x
+
+Upgrade the Node package, React component/CSS and every worker to **2.0.0** together. Existing subscriber, template and queue documents remain usable; no database schema migration is needed. New `sent-` documents keep per-recipient snapshots. Previously completed 1.x jobs remain activity entries in Outbox; their exact per-recipient content was not retained and is not backfilled. Sent history does not import your provider’s Sent folder.
+
+Custom `MailProvider` implementations remain valid; implement optional `trash(id)` to enable inbox removal. Keep `flush` on a trusted scheduler and use the same store/workspace across API and workers. Sent snapshots contain private message bodies: protect them with the same server-only permissions, encryption and retention policy as the rest of your mailbox data. Collection scans remain limited to 5,000 records per prefix. Oversized rendered messages are rejected before queueing when their sent copy would exceed the portable 300 KB document budget.
+
+See the [v2.0.0 release notes](docs/RELEASE-2.0.0.md) for changes, migration details and validation limits.

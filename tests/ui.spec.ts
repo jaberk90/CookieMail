@@ -6,16 +6,17 @@ test('inbox, responsive theme, template variables, editor and tagged campaign', 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
+  const inboxTotal = (await (await page.request.get('/api/mail/inbox?limit=50')).json()).length;
   await expect(
     page.getByRole('heading', { name: 'Your inbox. A little more human.' }),
   ).toBeVisible();
   await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
   await page.getByLabel('Inbox limit').selectOption('50');
-  await expect(page.locator('.cm-table tbody tr')).toHaveCount(42);
+  await expect(page.locator('.cm-table tbody tr')).toHaveCount(inboxTotal);
   await page.getByLabel('Search', { exact: true }).fill('collaboration');
   await expect(page.locator('.cm-table tbody tr')).toHaveCount(6);
   await page.getByLabel('Search', { exact: true }).fill('');
-  await expect(page.locator('.cm-table tbody tr')).toHaveCount(42);
+  await expect(page.locator('.cm-table tbody tr')).toHaveCount(inboxTotal);
   await page.getByLabel('Inbox limit').selectOption('25');
   await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
   await page.getByRole('button', { name: 'Switch to light mode' }).click();
@@ -123,4 +124,93 @@ test('switching collections never renders rows from the previous view', async ({
     await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
   }
   expect(errors).toEqual([]);
+});
+
+test('compact cards, schedule/change/cancel, sent reader/resend and Trash confirmation', async ({
+  page,
+}, info) => {
+  await page.goto('/');
+  await expect(page.locator('.cm-table tbody tr')).toHaveCount(25);
+  const card = await page.locator('.cm-metrics > div').first().boundingBox();
+  expect(card!.height).toBeLessThan(105);
+  const name = 'Scheduled note ' + info.project.name;
+  await page.getByRole('button', { name: 'Compose email' }).click();
+  await page.getByLabel('To', { exact: true }).fill('release@example.com');
+  await page.getByLabel('Subject', { exact: true }).fill(name);
+  await page
+    .getByLabel('Your message', { exact: true })
+    .fill('The exact sent content for version two.');
+  await page.getByLabel('Delivery time').selectOption('later');
+  await page.getByRole('button', { name: 'Review email' }).scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `docs/screenshots/schedule-${info.project.name}.png`,
+    fullPage: false,
+  });
+  await page.getByRole('button', { name: 'Review email' }).click();
+  await page.getByRole('button', { name: 'Confirm schedule' }).click();
+  const row = page.locator('.cm-table tbody tr').filter({ hasText: name });
+  await expect(row).toContainText('scheduled');
+  await page.getByRole('button', { name: 'Process next 10' }).click();
+  await expect(row).toContainText('scheduled');
+  await page.screenshot({
+    path: `docs/screenshots/outbox-scheduled-${info.project.name}.png`,
+    fullPage: true,
+  });
+  await row.getByRole('button', { name: 'Change schedule' }).click();
+  await page.getByLabel('Delivery time').selectOption('now');
+  await page.getByRole('button', { name: 'Save schedule' }).click();
+  await expect(row).toContainText('queued');
+  await page.getByRole('button', { name: 'Process next 10' }).click();
+  await expect(row).toContainText('completed');
+  const nav = page.getByRole('navigation', { name: 'Mail navigation' });
+  await nav.getByRole('button', { name: 'Sent', exact: true }).click();
+  await page.getByRole('button', { name: name + ' View sent email', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('The exact sent content for version two.');
+  await page.screenshot({
+    path: `docs/screenshots/sent-reader-${info.project.name}.png`,
+    fullPage: false,
+  });
+  await page.getByRole('button', { name: 'Resend email', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm resend' }).click();
+  await page.getByRole('button', { name: 'Process next 10' }).click();
+  await expect(page.locator('.cm-table tbody tr').filter({ hasText: name })).toHaveCount(2);
+  await nav.getByRole('button', { name: 'Sent', exact: true }).click();
+  await expect(page.locator('.cm-table tbody tr').filter({ hasText: name })).toHaveCount(2);
+  await page.screenshot({ path: `docs/screenshots/sent-${info.project.name}.png`, fullPage: true });
+  const cancelled = 'Cancel me ' + info.project.name;
+  const queued = await page.request.post('/api/mail/send', {
+    headers: { 'X-CookieMail': '1' },
+    data: {
+      idempotencyKey: crypto.randomUUID(),
+      to: 'release@example.com',
+      subject: cancelled,
+      text: 'Do not deliver',
+      scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+    },
+  });
+  expect(queued.status()).toBe(202);
+  await nav.getByRole('button', { name: 'Outbox', exact: true }).click();
+  const cancelRow = page.locator('.cm-table tbody tr').filter({ hasText: cancelled });
+  await cancelRow.getByRole('button', { name: 'Cancel send' }).click();
+  await page.getByRole('button', { name: 'Confirm cancel' }).click();
+  await expect(cancelRow).toContainText('cancelled');
+  const inbox = await (await page.request.get('/api/mail/inbox?limit=50')).json();
+  const target = inbox.at(-1);
+  await nav.getByRole('button', { name: 'Inbox', exact: true }).click();
+  await page.getByLabel('Search', { exact: true }).fill(target.subject);
+  await page
+    .getByRole('button', {
+      name: target.subject + ' ' + (target.preview || 'Open conversation'),
+      exact: true,
+    })
+    .click();
+  await page.getByRole('button', { name: 'Move to Trash', exact: true }).click();
+  await page.screenshot({
+    path: `docs/screenshots/trash-confirm-${info.project.name}.png`,
+    fullPage: false,
+  });
+  await page.getByRole('button', { name: 'Confirm move to Trash' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.cm-table tbody tr')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

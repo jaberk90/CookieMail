@@ -8,7 +8,15 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import type { Block, BlockKind, MailMessage, MailSummary, Subscriber, Template } from './types.js';
+import type {
+  Block,
+  BlockKind,
+  MailMessage,
+  MailSummary,
+  Subscriber,
+  Template,
+  SentMessage,
+} from './types.js';
 export interface CookieMailProps {
   basePath?: string;
   getToken?: () => string | null | Promise<string | null>;
@@ -16,13 +24,25 @@ export interface CookieMailProps {
   onThemeChange?: (theme: 'dark' | 'light') => void;
   onUnauthorized?: () => void;
 }
-type View = 'inbox' | 'subscribers' | 'templates' | 'outbox';
+type View = 'inbox' | 'subscribers' | 'templates' | 'outbox' | 'sent';
+type MailAction = {
+  kind: 'trash' | 'resend' | 'schedule' | 'cancel';
+  id: string;
+  label: string;
+  scheduledAt?: string;
+};
+const localTimeInput = (value = new Date(Date.now() + 3600000).toISOString()) => {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const fullDate = (value: string) => new Date(value).toLocaleString();
 const icons: Record<string, string> = {
   inbox: 'M4 4h16v16H4zM4 13h5l2 3h2l2-3h5',
   subscribers:
     'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-4',
   templates: 'M3 3h18v18H3zM3 9h18M9 9v12',
   outbox: 'm22 2-7 20-4-9-9-4 20-7ZM22 2 11 13',
+  sent: 'm4 12 5 5L20 6',
   search: 'M21 21l-5-5M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16',
   plus: 'M12 5v14M5 12h14',
   moon: 'M21 13a9 9 0 0 1-10-10 9 9 0 1 0 10 10',
@@ -174,6 +194,8 @@ export function CookieMail({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const [sentMessage, setSentMessage] = useState<SentMessage | null>(null);
+  const [action, setAction] = useState<MailAction | null>(null);
   const [message, setMessage] = useState<MailMessage | null>(null),
     [subscriber, setSubscriber] = useState<Subscriber | 'new' | null>(null),
     [editor, setEditor] = useState<Template | 'new' | null>(null),
@@ -193,6 +215,8 @@ export function CookieMail({
         setItems([]);
         setTemplates([]);
         setMessage(null);
+        setSentMessage(null);
+        setAction(null);
         setSubscriber(null);
         setEditor(null);
         setCompose(null);
@@ -215,6 +239,8 @@ export function CookieMail({
         setItems([]);
         setTemplates([]);
         setMessage(null);
+        setSentMessage(null);
+        setAction(null);
         setSubscriber(null);
         setEditor(null);
         setCompose(null);
@@ -297,7 +323,8 @@ export function CookieMail({
     inbox: ['Your inbox. A little more human.', 'A clear space for your next great conversation.'],
     subscribers: ['Good people. Growing together.', 'A thoughtful audience, organized your way.'],
     templates: ['Make something worth opening.', 'Build once. Add a personal touch to every send.'],
-    outbox: ['Every message, accounted for.', 'Track queued campaigns and individual deliveries.'],
+    outbox: ['Every message, accounted for.', 'Manage queued, scheduled and completed sends.'],
+    sent: ['Sent emails', 'View the exact copy accepted by your mail provider, or send it again.'],
   };
   return (
     <section className="cm" data-theme={theme} aria-label="CookieMail workspace">
@@ -318,7 +345,7 @@ export function CookieMail({
         </div>
         <div className="cm-nav-label">WORKSPACE</div>
         <nav aria-label="Mail navigation">
-          {(['inbox', 'subscribers', 'templates', 'outbox'] as View[]).map((v) => (
+          {(['inbox', 'sent', 'subscribers', 'templates', 'outbox'] as View[]).map((v) => (
             <button
               key={v}
               className={`cm-nav ${view === v ? 'cm-active' : ''}`}
@@ -329,7 +356,7 @@ export function CookieMail({
               }}
             >
               <Icon name={v} />
-              <span>{v === 'outbox' ? 'Sent & queued' : v[0].toUpperCase() + v.slice(1)}</span>
+              <span>{v[0].toUpperCase() + v.slice(1)}</span>
               {v === 'subscribers' && boot && <small>{boot.subscribers}</small>}
             </button>
           ))}
@@ -350,10 +377,7 @@ export function CookieMail({
       <main className="cm-main">
         <header className="cm-top">
           <div>
-            Workspace <span>/</span>{' '}
-            <strong>
-              {view === 'outbox' ? 'Sent & queued' : view[0].toUpperCase() + view.slice(1)}
-            </strong>
+            Workspace <span>/</span> <strong>{view[0].toUpperCase() + view.slice(1)}</strong>
           </div>
           {(!controlledTheme || onThemeChange) && (
             <button
@@ -394,28 +418,25 @@ export function CookieMail({
           </div>
           <div className="cm-metrics">
             <div>
-              <span>Mailbox window</span>
+              <span>Inbox window</span>
               <strong>
                 {limit}
                 <small>latest emails</small>
               </strong>
-              <p>Fresh conversations, less clutter</p>
             </div>
             <div>
-              <span>Subscribed people</span>
+              <span>Subscribers</span>
               <strong>
                 {boot?.subscribers ?? '—'}
                 <small>in your audience</small>
               </strong>
-              <p>Permission to stay in touch</p>
             </div>
             <div>
-              <span>Ready to personalize</span>
+              <span>Templates</span>
               <strong>
                 {boot?.templates ?? '—'}
                 <small>email templates</small>
               </strong>
-              <p>A great starting point, every time</p>
             </div>
           </div>
           {notice && (
@@ -546,7 +567,9 @@ export function CookieMail({
                         ? ['From', 'Subject', 'Received', '']
                         : view === 'subscribers'
                           ? ['Subscriber', 'Tags', 'Status', 'Added']
-                          : ['Message', 'Audience', 'Status', 'Sent']
+                          : view === 'sent'
+                            ? ['Message', 'To', 'Accepted', '']
+                            : ['Message', 'Audience', 'Status', 'Sent']
                       ).map((h, i) => (
                         <th key={i}>{h}</th>
                       ))}
@@ -623,6 +646,32 @@ export function CookieMail({
                             </td>
                             <td className="cm-date">{formatDate(item.createdAt)}</td>
                           </>
+                        ) : view === 'sent' ? (
+                          <>
+                            <td>
+                              <button
+                                className="cm-subject"
+                                disabled={busy}
+                                onClick={() =>
+                                  void act(async () =>
+                                    setSentMessage(
+                                      await api<SentMessage>(
+                                        '/sent/' + encodeURIComponent(item.id),
+                                      ),
+                                    ),
+                                  )
+                                }
+                              >
+                                {item.subject}
+                                <small>View sent email</small>
+                              </button>
+                            </td>
+                            <td>{item.to}</td>
+                            <td className="cm-date">{fullDate(item.sentAt)}</td>
+                            <td>
+                              <span className="cm-badge cm-green">Accepted</span>
+                            </td>
+                          </>
                         ) : (
                           <>
                             <td>
@@ -631,6 +680,40 @@ export function CookieMail({
                                 {formatDate(item.createdAt)}
                                 {item.error && ' · ' + item.error}
                               </small>
+                              {item.scheduledAt && (
+                                <small className="cm-muted">
+                                  Scheduled: {fullDate(item.scheduledAt)}
+                                </small>
+                              )}
+                              {admin && item.canChange && (
+                                <div className="cm-inline-actions">
+                                  <button
+                                    className="cm-button"
+                                    onClick={() =>
+                                      setAction({
+                                        kind: 'schedule',
+                                        id: item.id,
+                                        label: item.subject,
+                                        scheduledAt: item.scheduledAt,
+                                      })
+                                    }
+                                  >
+                                    Change schedule
+                                  </button>
+                                  <button
+                                    className="cm-button"
+                                    onClick={() =>
+                                      setAction({
+                                        kind: 'cancel',
+                                        id: item.id,
+                                        label: item.subject,
+                                      })
+                                    }
+                                  >
+                                    Cancel send
+                                  </button>
+                                </div>
+                              )}
                             </td>
                             <td>
                               {item.tag ? '#' + item.tag : item.to}
@@ -726,8 +809,78 @@ export function CookieMail({
                 Reply to sender
               </button>
             )}
+            {admin && boot?.canTrash && (
+              <button
+                className="cm-button"
+                onClick={() => {
+                  setAction({ kind: 'trash', id: message.id, label: message.subject });
+                  setMessage(null);
+                }}
+              >
+                Move to Trash
+              </button>
+            )}
           </div>
         </Modal>
+      )}
+      {sentMessage && (
+        <Modal title={sentMessage.subject} onClose={() => setSentMessage(null)} wide>
+          <div className="cm-modal-body">
+            <p className="cm-help">
+              To: {sentMessage.to} · Accepted by provider: {fullDate(sentMessage.sentAt)}
+            </p>
+            {sentMessage.html ? (
+              <iframe
+                title="Sent email content"
+                sandbox=""
+                referrerPolicy="no-referrer"
+                className="cm-email-frame"
+                srcDoc={emailDocument(sentMessage.html)}
+              />
+            ) : (
+              <pre className="cm-message-text">{sentMessage.text}</pre>
+            )}
+            <p className="cm-help">
+              Provider acceptance does not confirm inbox delivery. Remote images are blocked.
+            </p>
+            {admin && (
+              <button
+                className="cm-button cm-primary"
+                onClick={() => {
+                  setAction({
+                    kind: 'resend',
+                    id: sentMessage.id,
+                    label: sentMessage.subject + ' → ' + sentMessage.to,
+                  });
+                  setSentMessage(null);
+                }}
+              >
+                Resend email
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
+      {action && (
+        <MailActionDialog
+          item={action}
+          api={api}
+          close={() => setAction(null)}
+          saved={() => {
+            setAction(null);
+            refresh();
+            setNotice(
+              action.kind === 'trash'
+                ? 'Email moved to Trash.'
+                : action.kind === 'cancel'
+                  ? 'Send cancelled.'
+                  : action.kind === 'schedule'
+                    ? 'Schedule updated.'
+                    : 'A new copy is queued. Your worker sends it when due.',
+            );
+            if (action.kind === 'resend') setView('outbox');
+          }}
+        />
       )}
       {subscriber && (
         <SubscriberEditor
@@ -772,7 +925,7 @@ export function CookieMail({
             setQuery('');
             refresh();
             setNotice(
-              'Email queued. Your configured worker will deliver it; use Process next 10 to send now.',
+              'Email saved. Your configured worker sends queued messages when due; Process next 10 never sends scheduled mail early.',
             );
           }}
         />
@@ -1236,6 +1389,126 @@ function TemplateEditor({
     </Modal>
   );
 }
+function MailActionDialog({
+  item,
+  api,
+  close,
+  saved,
+}: {
+  item: MailAction;
+  api: Api;
+  close: () => void;
+  saved: () => void;
+}) {
+  const [later, setLater] = useState(item.kind === 'schedule');
+  const [time, setTime] = useState(localTimeInput(item.scheduledAt || undefined));
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  const key = useRef(crypto.randomUUID());
+  const titles = {
+    trash: 'Move email to Trash',
+    resend: 'Resend email',
+    schedule: 'Change send time',
+    cancel: 'Cancel scheduled or queued send',
+  };
+  return (
+    <Modal title={titles[item.kind]} onClose={close}>
+      <form
+        className="cm-modal-body cm-form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError('');
+          try {
+            const scheduledAt = later ? new Date(time).toISOString() : null;
+            if (item.kind === 'trash')
+              await api('/inbox/' + encodeURIComponent(item.id), 'DELETE', {});
+            else if (item.kind === 'cancel')
+              await api('/outbox/' + encodeURIComponent(item.id), 'DELETE', {});
+            else if (item.kind === 'schedule')
+              await api('/outbox/' + encodeURIComponent(item.id) + '/schedule', 'PATCH', {
+                scheduledAt,
+              });
+            else
+              await api('/sent/' + encodeURIComponent(item.id) + '/resend', 'POST', {
+                idempotencyKey: key.current,
+                ...(scheduledAt ? { scheduledAt } : {}),
+              });
+            saved();
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <strong>{item.label}</strong>
+        <p>
+          {item.kind === 'trash'
+            ? 'This moves the email to your provider’s Trash folder. It is not permanently deleted.'
+            : item.kind === 'resend'
+              ? 'Send another copy to the same recipient. Unsubscribed campaign recipients remain suppressed.'
+              : item.kind === 'cancel'
+                ? 'This stops a send that has not started. Already accepted messages cannot be recalled.'
+                : 'Only a send that has not started can be changed.'}
+        </p>
+        {(item.kind === 'resend' || item.kind === 'schedule') && (
+          <>
+            <label>
+              Delivery time
+              <select
+                value={later ? 'later' : 'now'}
+                onChange={(e) => {
+                  setLater(e.target.value === 'later');
+                  key.current = crypto.randomUUID();
+                }}
+              >
+                <option value="now">Send now (next worker run)</option>
+                <option value="later">Schedule for later</option>
+              </select>
+            </label>
+            {later && (
+              <label>
+                Send at
+                <input
+                  type="datetime-local"
+                  required
+                  value={time}
+                  onChange={(e) => {
+                    setTime(e.target.value);
+                    key.current = crypto.randomUUID();
+                  }}
+                />
+                <small>Time zone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
+              </label>
+            )}
+          </>
+        )}
+        {error && (
+          <p className="cm-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="cm-actions">
+          <button type="button" className="cm-button" disabled={busy} onClick={close}>
+            Keep unchanged
+          </button>
+          <button className="cm-button cm-primary" disabled={busy}>
+            {busy
+              ? 'Saving…'
+              : item.kind === 'trash'
+                ? 'Confirm move to Trash'
+                : item.kind === 'cancel'
+                  ? 'Confirm cancel'
+                  : item.kind === 'resend'
+                    ? 'Confirm resend'
+                    : 'Save schedule'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 function Composer({
   initial,
   templates,
@@ -1259,6 +1532,8 @@ function Composer({
     [body, setBody] = useState(''),
     [templateId, setTemplateId] = useState(templates[0]?.id || ''),
     [values, setValues] = useState<Record<string, string>>({}),
+    [sendLater, setSendLater] = useState(false),
+    [scheduledAt, setScheduledAt] = useState(localTimeInput()),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -1270,6 +1545,15 @@ function Composer({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    if (
+      sendLater &&
+      (!scheduledAt ||
+        !Number.isFinite(new Date(scheduledAt).getTime()) ||
+        new Date(scheduledAt).getTime() <= Date.now())
+    ) {
+      setError('Choose a future date and time.');
+      return;
+    }
     if (!review) {
       setReview(true);
       return;
@@ -1283,6 +1567,7 @@ function Composer({
           ? { templateId, values }
           : { subject, ...(mode === 'html' ? { html: body } : { text: body }) }),
         ...(initial.replyToId ? { replyToId: initial.replyToId } : {}),
+        ...(sendLater ? { scheduledAt: new Date(scheduledAt).toISOString() } : {}),
       });
       sent();
     } catch (e) {
@@ -1301,7 +1586,12 @@ function Composer({
           <>
             <div className="cm-review">
               <Icon name="outbox" />
-              <h3>Ready to queue this email?</h3>
+              <h3>{sendLater ? 'Ready to schedule this email?' : 'Ready to queue this email?'}</h3>
+              <p>
+                {sendLater
+                  ? 'Send after: ' + fullDate(new Date(scheduledAt).toISOString())
+                  : 'Send at the next worker run.'}
+              </p>
               <p>
                 {audience === 'tag'
                   ? `One personalized email to each subscribed person tagged “${chosenTag}”.`
@@ -1445,6 +1735,31 @@ function Composer({
                 )}
               </>
             )}
+            <label>
+              Delivery time
+              <select
+                value={sendLater ? 'later' : 'now'}
+                onChange={(e) => setSendLater(e.target.value === 'later')}
+              >
+                <option value="now">Send now (next worker run)</option>
+                <option value="later">Schedule for later</option>
+              </select>
+            </label>
+            {sendLater && (
+              <label>
+                Send at
+                <input
+                  type="datetime-local"
+                  required
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                />
+                <small>
+                  Time zone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Delivery runs at
+                  the first worker tick after this time.
+                </small>
+              </label>
+            )}
           </>
         )}
         {error && (
@@ -1457,7 +1772,13 @@ function Composer({
             Cancel
           </button>
           <button className="cm-button cm-primary" disabled={busy}>
-            {busy ? 'Queuing…' : review ? 'Confirm & queue' : 'Review email'}
+            {busy
+              ? 'Saving…'
+              : review
+                ? sendLater
+                  ? 'Confirm schedule'
+                  : 'Confirm & queue'
+                : 'Review email'}
             <Icon name="arrow" />
           </button>
         </div>
