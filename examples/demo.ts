@@ -72,6 +72,11 @@ const provider: MailProvider = {
     const m = messages.find((m) => m.id === id);
     if (m) m.unread = false;
   },
+  async trash(id) {
+    const index = messages.findIndex((m) => m.id === id);
+    if (index < 0) throw new Error('Not found');
+    messages.splice(index, 1);
+  },
   async send(m) {
     delivered.push(m);
   },

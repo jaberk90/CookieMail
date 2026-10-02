@@ -1,7 +1,7 @@
 {
   "name": "cookiemail",
-  "version": "1.0.0",
-  "description": "An embeddable inbox, subscriber audience and visual email studio for Node.js and React.",
+  "version": "2.0.0",
+  "description": "An embeddable inbox, scheduled email, sent history, subscribers and visual email studio for Node.js and React.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
@@ -86,7 +86,8 @@
     "LICENSE",
     "docs",
     "examples/integration.ts",
-    "examples/footer-signup.tsx"
+    "examples/footer-signup.tsx",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22.13"
@@ -197,7 +198,10 @@
     "dynamodb",
     "azure",
     "cosmosdb",
-    "postgresql"
+    "postgresql",
+    "scheduled-email",
+    "email-scheduling",
+    "sent-mail"
   ],
   "homepage": "https://github.com/jaberk90/CookieMail#readme",
   "bugs": {

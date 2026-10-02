@@ -13,3 +13,7 @@ Storage is partitioned by the server-selected workspace. Client database access 
 No automatic retry occurs after an ambiguous send; inspect your provider before sending replacements. Worker crashes can leave an uncertain delivery. Stable Message-IDs help reconcile but do not guarantee deduplication at SMTP servers.
 
 Report vulnerabilities privately to the repository owner using GitHub security reporting when enabled. Do not post credentials, inbox content or subscriber addresses in public issues. Nightly audits and daily Dependabot cover dependencies; passing audits does not guarantee absence of vulnerabilities.
+
+Scheduled jobs and sent copies remain inside the trusted workspace partition. Administrators alone may cancel, reschedule, resend or move messages to Trash. Resends preserve the campaign recipient identity and recheck unsubscribe status at delivery. Ambiguous deliveries are not exposed as confirmed sent copies and cannot use the resend action. Snapshot writes and delivery progress use atomic commits; SMTP itself cannot participate in a database transaction, so failures can still require reconciliation.
+
+Moving an inbox message to Trash only requests a move, never a standalone delete/expunge; provider retention rules may later empty Trash. Trash folder configuration is trusted server configuration, never a client-supplied destination.

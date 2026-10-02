@@ -69,8 +69,11 @@ export function dynamodbStore(client: DynamoDBDocumentClient, tableName: string)
       } catch (error) {
         const e = error as { name?: string; CancellationReasons?: { Code?: string }[] };
         if (
-          e.name === 'TransactionCanceledException' &&
-          e.CancellationReasons?.some((r) => r.Code === 'ConditionalCheckFailed')
+          e.name === 'TransactionConflictException' ||
+          (e.name === 'TransactionCanceledException' &&
+            e.CancellationReasons?.some(
+              (r) => r.Code === 'ConditionalCheckFailed' || r.Code === 'TransactionConflict',
+            ))
         )
           return false;
         throw error;

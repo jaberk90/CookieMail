@@ -11,7 +11,7 @@ import {
   escapeHtml,
   previewDocument,
 } from './templates.js';
-import type { CookieMailConfig, Subscriber, Template } from './types.js';
+import type { CookieMailConfig, Subscriber, Template, SentMessage } from './types.js';
 export { imapSmtpProvider } from './provider.js';
 export { renderTemplate } from './templates.js';
 export type * from './types.js';
@@ -53,6 +53,7 @@ const sendSchema = z
     templateId: z.string().uuid().optional(),
     values: z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/), z.string().max(4000)).default({}),
     replyToId: z.string().max(100).optional(),
+    scheduledAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((s) => Boolean(s.to) !== Boolean(s.tag), 'Choose one recipient or one tag');
 class HttpError extends Error {
@@ -94,7 +95,7 @@ export function createCookieMail(config: CookieMailConfig) {
     for await (const d of documents(store, workspace, prefix)) {
       out.push(d.value);
       if (out.length > 5000)
-        throw new HttpError(413, 'Workspace exceeds the first-version 5000-record list limit');
+        throw new HttpError(413, 'Workspace exceeds the 5000-record list limit');
     }
     return out;
   }
@@ -171,44 +172,68 @@ export function createCookieMail(config: CookieMailConfig) {
     await save('template-' + id, item);
     return item;
   }
-  async function queue(input: unknown) {
+  async function enqueue(input: unknown, source?: Record<string, unknown>) {
     const s = sendSchema.parse(input);
     const key = 'job-' + s.idempotencyKey;
-    const fingerprint = hash(JSON.stringify(s));
+    const fingerprint = hash(JSON.stringify(source ? { ...s, resendOf: source.id } : s));
     const existing = await read(key);
     if (existing) {
       if (existing.fingerprint !== fingerprint)
         throw new HttpError(409, 'Idempotency key was used for a different message');
       return { id: existing.id, recipients: (existing.recipients as unknown[]).length };
     }
+    const scheduledAt = s.scheduledAt ? futureTime(s.scheduledAt) : null;
     const template = s.templateId
       ? ((await read('template-' + s.templateId)) as unknown as Template)
       : undefined;
     if (s.templateId && !template) throw new HttpError(404, 'Template not found');
-    if (!template && (!s.subject || (!s.text && !s.html)))
+    if (!source && !template && (!s.subject || (!s.text && !s.html)))
       throw new HttpError(400, 'Subject and content required');
-    let recipients = s.to
-      ? [{ email: s.to }]
-      : (await all('subscriber-'))
-          .filter((v) => v.status === 'subscribed' && (v.tags as string[]).includes(s.tag!))
-          .map((v) => ({ id: String(v.id), email: String(v.email) }));
+    let recipients = source
+      ? [
+          {
+            email: String(source.to),
+            ...(source.subscriberId ? { id: String(source.subscriberId) } : {}),
+          },
+        ]
+      : s.to
+        ? [{ email: s.to }]
+        : (await all('subscriber-'))
+            .filter((v) => v.status === 'subscribed' && (v.tags as string[]).includes(s.tag!))
+            .map((v) => ({ id: String(v.id), email: String(v.email) }));
     if (!recipients.length) throw new HttpError(400, 'This tag has no subscribed recipients');
     if (recipients.length > 500) throw new HttpError(413, 'At most 500 recipients per campaign');
+    const checkCopySize = (content: unknown) => {
+      if (Buffer.byteLength(JSON.stringify(content)) * 2 + 4096 > 300_000)
+        throw new HttpError(413, 'Rendered message is too large for a portable sent copy');
+    };
+    if (!template)
+      checkCopySize(
+        source
+          ? { subject: source.subject, text: source.baseText, html: source.baseHtml }
+          : {
+              subject: s.subject,
+              text: s.text || cleanHtml(s.html || '').replace(/<[^>]+>/g, ' '),
+              html: s.html ? cleanHtml(s.html) : undefined,
+            },
+      );
     for (const r of recipients) {
       const sub = 'id' in r ? await read('subscriber-' + r.id) : undefined;
       if (template)
-        render(template.subject, template.blocks, {
-          ...s.values,
-          ...(sub
-            ? {
-                firstName: String(sub.firstName),
-                lastName: String(sub.lastName),
-                email: String(sub.email),
-              }
-            : {}),
-        });
+        checkCopySize(
+          render(template.subject, template.blocks, {
+            ...s.values,
+            ...(sub
+              ? {
+                  firstName: String(sub.firstName),
+                  lastName: String(sub.lastName),
+                  email: String(sub.email),
+                }
+              : {}),
+          }),
+        );
     }
-    let inReplyTo: string | undefined;
+    let inReplyTo: string | undefined = source?.inReplyTo ? String(source.inReplyTo) : undefined;
     if (s.replyToId) {
       if (s.tag) throw new HttpError(400, 'Cannot reply to a tag');
       const original = await config.provider.get(s.replyToId);
@@ -224,7 +249,16 @@ export function createCookieMail(config: CookieMailConfig) {
       template: template || null,
       recipients,
       inReplyTo: inReplyTo || null,
-      status: 'queued',
+      ...(source
+        ? {
+            subject: source.subject,
+            text: source.baseText,
+            html: source.baseHtml || null,
+            resendOf: source.id,
+          }
+        : {}),
+      status: scheduledAt ? 'scheduled' : 'queued',
+      scheduledAt,
       cursor: 0,
       sent: 0,
       skipped: 0,
@@ -239,6 +273,103 @@ export function createCookieMail(config: CookieMailConfig) {
       return { id: job.id, recipients: recipients.length };
     });
   }
+  const queue = (input: unknown) => enqueue(input);
+  function futureTime(value: string) {
+    const parsed = z.string().datetime({ offset: true }).parse(value);
+    const time = Date.parse(parsed);
+    if (time <= Date.now() || time > Date.now() + 366 * 86400000)
+      throw new HttpError(400, 'Schedule a time in the future, within one year');
+    return new Date(time).toISOString();
+  }
+  async function reschedule(id: string, scheduledAt: string | null) {
+    z.string().uuid().parse(id);
+    const time = scheduledAt === null ? null : futureTime(scheduledAt);
+    return atomic(store, workspace, async (tx) => {
+      const key = 'job-' + id,
+        job = await tx.get(key);
+      if (!job) throw new HttpError(404, 'Queued email not found');
+      if (!['queued', 'scheduled'].includes(String(job.status)) || Number(job.cursor) !== 0)
+        throw new HttpError(409, 'Only emails that have not started sending can be rescheduled');
+      const next = { ...job, scheduledAt: time, status: time ? 'scheduled' : 'queued' };
+      tx.put(key, next);
+      return { id, status: next.status, scheduledAt: time };
+    });
+  }
+  async function cancel(id: string) {
+    z.string().uuid().parse(id);
+    return atomic(store, workspace, async (tx) => {
+      const key = 'job-' + id,
+        job = await tx.get(key);
+      if (!job) throw new HttpError(404, 'Queued email not found');
+      if (job.status === 'cancelled') return { ok: true };
+      if (!['queued', 'scheduled'].includes(String(job.status)) || Number(job.cursor) !== 0)
+        throw new HttpError(409, 'Only emails that have not started sending can be cancelled');
+      tx.put(key, { ...job, status: 'cancelled', cancelledAt: new Date().toISOString() });
+      return { ok: true };
+    });
+  }
+  const receiptId = (id: string) =>
+    z
+      .string()
+      .regex(/^[a-f0-9-]{36}\.[0-9]{1,3}$/)
+      .parse(id);
+  async function sentRecord(id: string) {
+    const value = await read('sent-' + receiptId(id));
+    if (!value || value.status !== 'sent') throw new HttpError(404, 'Sent email not found');
+    return value;
+  }
+  async function getSent(id: string): Promise<SentMessage> {
+    const s = await sentRecord(id);
+    return {
+      id: String(s.id),
+      jobId: String(s.jobId),
+      to: String(s.to),
+      subject: String(s.subject),
+      text: String(s.text),
+      html: s.html ? cleanHtml(String(s.html)) : undefined,
+      messageId: String(s.messageId),
+      sentAt: String(s.sentAt),
+    };
+  }
+  async function listSent() {
+    const out: Array<Pick<SentMessage, 'id' | 'jobId' | 'to' | 'subject' | 'sentAt'>> = [];
+    let count = 0;
+    for await (const { value: s } of documents(store, workspace, 'sent-')) {
+      if (++count > 5000) throw new HttpError(413, 'Workspace exceeds the 5000-record list limit');
+      if (s.status === 'sent')
+        out.push({
+          id: String(s.id),
+          jobId: String(s.jobId),
+          to: String(s.to),
+          subject: String(s.subject),
+          sentAt: String(s.sentAt),
+        });
+    }
+    return out.sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)));
+  }
+  async function resend(id: string, input: unknown) {
+    const options = z
+      .object({
+        idempotencyKey: z.string().uuid(),
+        scheduledAt: z.string().datetime({ offset: true }).optional(),
+      })
+      .strict()
+      .parse(input);
+    const source = await sentRecord(id);
+    if (source.subscriberId) {
+      const subscriber = await read('subscriber-' + source.subscriberId);
+      if (subscriber?.status !== 'subscribed')
+        throw new HttpError(409, 'This recipient has unsubscribed; the email cannot be resent');
+    }
+    return enqueue({ ...options, to: source.to }, source);
+  }
+  async function trash(id: string) {
+    z.string().min(1).max(100).parse(id);
+    if (!config.provider.trash)
+      throw new HttpError(501, 'This mail provider does not support moving emails to Trash');
+    await config.provider.trash(id);
+    return { ok: true };
+  }
   /** Call from a trusted scheduled worker. No timers. Ambiguous sends stop for operator reconciliation. */
   async function flush(limit = 10) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('limit must be 1-50');
@@ -246,7 +377,7 @@ export function createCookieMail(config: CookieMailConfig) {
       processed = 0,
       skipped = 0;
     for (const job of (await all('job-')).sort((a, b) =>
-      String(a.createdAt).localeCompare(String(b.createdAt)),
+      String(a.scheduledAt || a.createdAt).localeCompare(String(b.scheduledAt || b.createdAt)),
     )) {
       if (processed >= limit) break;
       const key = 'job-' + job.id;
@@ -262,16 +393,19 @@ export function createCookieMail(config: CookieMailConfig) {
           });
           return null;
         }
-        if (j.status !== 'queued') return null;
+        if (!['queued', 'scheduled'].includes(String(j.status))) return null;
+        if (j.scheduledAt && Date.parse(String(j.scheduledAt)) > Date.now()) return null;
         const next = { ...j, status: 'sending', owner, leaseUntil: Date.now() + 300000 };
         tx.put(key, next);
         return next;
       });
       if (!claimed) continue;
       const j = claimed as any;
+      let pendingReceipt: string | undefined;
       try {
         while (j.cursor < j.recipients.length && processed < limit) {
           processed++;
+          pendingReceipt = undefined;
           const recipient = j.recipients[j.cursor];
           const sub = recipient.id ? await read('subscriber-' + recipient.id) : undefined;
           if (recipient.id && sub?.status !== 'subscribed') {
@@ -297,7 +431,7 @@ export function createCookieMail(config: CookieMailConfig) {
             const unsubscribeUrl = sub
               ? `${origin.origin}${base}/unsubscribe?token=${sub.token}`
               : undefined;
-            await config.provider.send({
+            const payload = {
               to: recipient.email,
               ...rendered,
               text: rendered.text + (unsubscribeUrl ? `\n\nUnsubscribe: ${unsubscribeUrl}` : ''),
@@ -310,14 +444,50 @@ export function createCookieMail(config: CookieMailConfig) {
               messageId: `<${hash(workspace).slice(0, 12)}.${j.id}.${j.cursor}@${origin.hostname}>`,
               inReplyTo: j.inReplyTo || undefined,
               unsubscribeUrl,
+            };
+            pendingReceipt = 'sent-' + j.id + '.' + j.cursor;
+            await atomic(store, workspace, async (tx) => {
+              const current = await tx.get(key);
+              if (
+                current?.owner !== owner ||
+                current.status !== 'sending' ||
+                Number(current.leaseUntil) <= Date.now()
+              )
+                throw new Error('Delivery lease lost');
+              await tx.get(pendingReceipt!);
+              tx.put(pendingReceipt!, {
+                id: j.id + '.' + j.cursor,
+                jobId: j.id,
+                to: recipient.email,
+                subject: payload.subject,
+                text: payload.text,
+                html: payload.html || null,
+                messageId: payload.messageId,
+                inReplyTo: payload.inReplyTo || null,
+                subscriberId: recipient.id || null,
+                baseText: rendered.text,
+                baseHtml: rendered.html || null,
+                status: 'sending',
+                createdAt: new Date().toISOString(),
+              });
             });
+            await config.provider.send(payload);
             j.sent++;
             sent++;
           }
           j.cursor++;
           await atomic(store, workspace, async (tx) => {
             const current = await tx.get(key);
-            if (current?.owner !== owner) throw new Error('Delivery lease lost');
+            if (current?.owner !== owner || current.status !== 'sending')
+              throw new Error('Delivery lease lost');
+            if (pendingReceipt) {
+              const receipt = await tx.get(pendingReceipt);
+              tx.put(pendingReceipt, {
+                ...receipt,
+                status: 'sent',
+                sentAt: new Date().toISOString(),
+              });
+            }
             tx.put(key, {
               ...current,
               cursor: j.cursor,
@@ -329,7 +499,7 @@ export function createCookieMail(config: CookieMailConfig) {
         }
         await atomic(store, workspace, async (tx) => {
           const current = await tx.get(key);
-          if (current?.owner === owner)
+          if (current?.owner === owner && current.status === 'sending')
             tx.put(key, {
               ...current,
               status: j.cursor === j.recipients.length ? 'completed' : 'queued',
@@ -341,6 +511,11 @@ export function createCookieMail(config: CookieMailConfig) {
         config.logger?.error('CookieMail delivery needs reconciliation', e);
         await atomic(store, workspace, async (tx) => {
           const current = await tx.get(key);
+          if (pendingReceipt) {
+            const receipt = await tx.get(pendingReceipt);
+            if (receipt?.status === 'sending')
+              tx.put(pendingReceipt, { ...receipt, status: 'uncertain' });
+          }
           if (current?.owner === owner)
             tx.put(key, {
               ...current,
@@ -393,6 +568,7 @@ export function createCookieMail(config: CookieMailConfig) {
       subscribers: subscribers.filter((s) => s.status === 'subscribed').length,
       tags: [...new Set(subscribers.flatMap((s) => s.tags as string[]))].sort(),
       templates: (await all('template-')).length,
+      canTrash: typeof config.provider.trash === 'function',
     });
   });
   router.get('/inbox', async (req, res) =>
@@ -415,6 +591,20 @@ export function createCookieMail(config: CookieMailConfig) {
     await config.provider.markRead(String(req.params.id));
     res.json({ ok: true });
   });
+  router.delete('/inbox/:id', async (req, res) => res.json(await trash(String(req.params.id))));
+  router.get('/sent', async (_req, res) => res.json(await listSent()));
+  router.get('/sent/:id', async (req, res) => res.json(await getSent(String(req.params.id))));
+  router.post('/sent/:id/resend', async (req, res) =>
+    res.status(202).json(await resend(String(req.params.id), req.body)),
+  );
+  router.patch('/outbox/:id/schedule', async (req, res) => {
+    const body = z
+      .object({ scheduledAt: z.string().datetime({ offset: true }).nullable() })
+      .strict()
+      .parse(req.body);
+    res.json(await reschedule(String(req.params.id), body.scheduledAt));
+  });
+  router.delete('/outbox/:id', async (req, res) => res.json(await cancel(String(req.params.id))));
   router.get('/subscribers', async (_req, res) =>
     res.json((await all('subscriber-')).map(publicSubscriber)),
   );
@@ -463,6 +653,8 @@ export function createCookieMail(config: CookieMailConfig) {
           skipped: j.skipped,
           error: j.error,
           createdAt: j.createdAt,
+          scheduledAt: j.scheduledAt || null,
+          canChange: ['queued', 'scheduled'].includes(String(j.status)) && Number(j.cursor) === 0,
         }))
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
     ),
@@ -522,6 +714,12 @@ export function createCookieMail(config: CookieMailConfig) {
     saveTemplate,
     queue,
     flush,
+    trash,
+    listSent,
+    getSent,
+    resend,
+    reschedule,
+    cancel,
     async close() {
       closed = true;
       await config.provider.close?.();

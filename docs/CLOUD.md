@@ -1,6 +1,6 @@
 # Cloud setup
 
-CookieMail separates the mailbox (`MailProvider`) from durable application storage (`MailStore`). IMAP receives mail and SMTP sends it; cloud databases store subscribers, templates and outbox state. Deploy the private API and a trusted scheduled worker using the same store, `workspace` and mailbox configuration. This repository does not provision resources or grant IAM permissions automatically.
+CookieMail separates the mailbox (`MailProvider`) from durable application storage (`MailStore`). IMAP receives mail and SMTP sends it; cloud databases store subscribers, templates, sent-message snapshots and outbox state. Deploy the private API and a trusted scheduled worker using the same store, `workspace` and mailbox configuration. This repository does not provision resources or grant IAM permissions automatically.
 
 | Platform         | Recommended store      | Runtime                                              | Worker                                     |
 | ---------------- | ---------------------- | ---------------------------------------------------- | ------------------------------------------ |
@@ -134,3 +134,16 @@ Secrets: `IMAP_PASS` (or an OAuth access token supplied by your host), `SMTP_PAS
 - Confirm API / worker deadlines accommodate the chosen batch size.
 
 Local tests cannot establish real provider deliverability or deployed IAM correctness. Cloud store tests are opt-in via the contract test environment variables; see `tests/stores.test.ts`. Cosmos/cloud credentials are not included.
+
+## Scheduled email workers
+
+Scheduling in v2 is stored in your existing database. No extra queue product or browser timer is required. Upgrade both API and workers to v2 and run `await mail.flush(5)` every minute with the same workspace/store/mailbox configuration. The worker atomically claims only due jobs. Keep one scheduled worker per workspace for predictable provider limits; concurrent invocations are lease-protected. Choose a batch size and timeout that fit your SMTP provider.
+
+- **Firebase:** keep the `onSchedule` handler above, with `schedule: 'every 1 minutes'`, SMTP secrets and Firestore server access.
+- **Google Cloud:** Cloud Scheduler invokes a private Cloud Run worker/job using a dedicated service account. That handler calls `mail.flush(5)`; require authenticated invocation.
+- **AWS:** EventBridge invokes a Lambda handler that obtains your configured mail instance and calls `mail.flush(5)`. Its execution role needs the DynamoDB table and mail-secret access.
+- **Azure:** a Timer-triggered Function calls `mail.flush(5)` using the configured Cosmos/PostgreSQL store and mailbox credentials.
+
+A future `scheduledAt` is never made due by clicking **Process next 10**. Outages deliver later, on the next successful worker run. Cancel/reschedule is allowed only before a worker claims the job and before any recipient is processed. Do not expose an anonymous flush endpoint. Keep the server clock synchronized.
+
+The UI uses the browser’s time zone; API timestamps require an explicit offset and are normalized to UTC. Run acceptance tests with a disposable inbox: future send, cancel before due, restart before due, subscribed/unsubscribed tag recipients, and Trash recovery. New sent-copy records use the same tenant partition and atomic store contract, so no SQL/table/index migration is required. Their contents are private and need retention/backups configured by the host.

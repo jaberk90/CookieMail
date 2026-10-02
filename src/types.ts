@@ -25,6 +25,8 @@ export interface MailProvider {
   list(input: { limit: 25 | 50; query: string; unread: boolean }): Promise<MailSummary[]>;
   get(id: string): Promise<MailMessage>;
   markRead(id: string): Promise<void>;
+  /** Move a received message to Trash; never permanently expunge it. Optional for custom providers. */
+  trash?(id: string): Promise<void>;
   send(input: {
     to: string;
     subject: string;
@@ -70,4 +72,16 @@ export interface Subscriber {
   tags: string[];
   status: 'subscribed' | 'unsubscribed';
   createdAt: string;
+}
+
+/** A per-recipient copy accepted by the provider, not a delivery/read receipt. */
+export interface SentMessage {
+  id: string;
+  jobId: string;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  messageId: string;
+  sentAt: string;
 }
