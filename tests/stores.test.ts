@@ -163,3 +163,49 @@ test(
     }
   },
 );
+
+test('DynamoDB transaction contention retries without hiding validation errors', async () => {
+  const { dynamodbStore } = await import('../src/dynamodb.js');
+  for (const error of [
+    { name: 'TransactionConflictException' },
+    {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'TransactionConflict' }],
+    },
+  ]) {
+    const store = dynamodbStore(
+      {
+        send: async () => {
+          throw error;
+        },
+      } as any,
+      'test',
+    );
+    assert.equal(
+      await store.commit(
+        'tenant',
+        [{ key: 'job', revision: null }],
+        [{ key: 'job', revision: 'new', value: {} }],
+      ),
+      false,
+    );
+  }
+  const store = dynamodbStore(
+    {
+      send: async () => {
+        throw {
+          name: 'TransactionCanceledException',
+          CancellationReasons: [{ Code: 'ValidationError' }],
+        };
+      },
+    } as any,
+    'test',
+  );
+  await assert.rejects(
+    store.commit(
+      'tenant',
+      [{ key: 'job', revision: null }],
+      [{ key: 'job', revision: 'new', value: {} }],
+    ),
+  );
+});
