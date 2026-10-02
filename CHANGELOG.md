@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0
+
+- Integrate all nine open dependency PRs, including current GitHub Actions and Node, Nodemailer and Supertest types.
+- Run type checks with TypeScript 7 while retaining TypeScript 5.9 for tsup declaration generation.
+- Preserve the existing Node/React API and stored data; no database migration or new secret is required.
+
 ## 2.0.0
 
 - Compact workspace summary cards on desktop and mobile.
