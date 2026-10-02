@@ -38,7 +38,7 @@ Open **http://127.0.0.1:3177**. The demo binds only to loopback, signs in a fake
 Install from npm:
 
 ```sh
-npm install cookiemail@2.0.0
+npm install cookiemail@2.1.0
 ```
 
 For local package development, build and install a tarball:
@@ -355,3 +355,7 @@ Upgrade the Node package, React component/CSS and every worker to **2.0.0** toge
 Custom `MailProvider` implementations remain valid; implement optional `trash(id)` to enable inbox removal. Keep `flush` on a trusted scheduler and use the same store/workspace across API and workers. Sent snapshots contain private message bodies: protect them with the same server-only permissions, encryption and retention policy as the rest of your mailbox data. Collection scans remain limited to 5,000 records per prefix. Oversized rendered messages are rejected before queueing when their sent copy would exceed the portable 300 KB document budget.
 
 See the [v2.0.0 release notes](docs/RELEASE-2.0.0.md) for changes, migration details and validation limits.
+
+## 2.1.0 maintenance release
+
+See the [release notes](docs/RELEASE-2.1.0.md) for dependency updates and build compatibility. Existing setup, APIs and screenshots remain applicable. Contributors run TypeScript 7 through `npm run typecheck`; tsup uses the compatible TypeScript 5.9 compiler API for package declarations.

@@ -1,6 +1,6 @@
 {
   "name": "cookiemail",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "An embeddable inbox, scheduled email, sent history, subscribers and visual email studio for Node.js and React.",
   "type": "module",
   "license": "MIT",
@@ -97,7 +97,7 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-css.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node node_modules/typescript-native/bin/tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:ui": "playwright test",
     "check": "npm run typecheck && npm test && npm run build",
@@ -167,7 +167,8 @@
     "supertest": "^7.0.0",
     "tsup": "^8.5.0",
     "tsx": "^4.20.0",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3",
+    "typescript-native": "npm:typescript@^7.0.2"
   },
   "repository": {
     "type": "git",
