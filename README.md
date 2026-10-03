@@ -38,7 +38,7 @@ Open **http://127.0.0.1:3177**. The demo binds only to loopback, signs in a fake
 Install from npm:
 
 ```sh
-npm install cookiemail@2.1.0
+npm install cookiemail@2.2.0
 ```
 
 For local package development, build and install a tarball:
@@ -307,7 +307,7 @@ See [Cloud setup](docs/CLOUD.md) for Firebase Functions, Cloud Run, AWS and Azur
 
 See [Security](SECURITY.md) and [Publishing](docs/PUBLISHING.md). The repository includes CI, nightly dependency audit, daily Dependabot PRs and tag-based npm publishing with provenance. No mailbox credentials or cloud accounts are shipped.
 
-Current scope: one inbox folder with safe move-to-Trash; no permanent deletion, attachment download/upload, arbitrary folder moves, sent-folder IMAP append, native OAuth onboarding, double opt-in, analytics/open tracking or provider webhooks. “Sent” contains per-recipient copies accepted through CookieMail v2, not the provider’s entire Sent folder. Version 1 sends remain in Outbox activity, but cannot be retroactively reconstructed as exact sent copies. Search is subject/sender through IMAP and a local filter for the loaded audience/templates. Receiving from an existing mailbox is supported; operating an email server is not.
+Current scope: one inbox folder with safe move-to-Trash; no permanent deletion, attachment download/upload, arbitrary folder moves, sent-folder IMAP append, native OAuth onboarding, double opt-in, analytics/open tracking or provider webhooks. “Sent” contains per-recipient copies accepted through CookieMail v2 plus explicitly imported confirmed transactional receipts, not the provider’s entire Sent folder. Version 1 sends remain in Outbox activity, but cannot be retroactively reconstructed as exact sent copies. Search is subject/sender through IMAP and a local filter for the loaded audience/templates. Receiving from an existing mailbox is supported; operating an email server is not.
 
 ## Develop
 
@@ -359,3 +359,23 @@ See the [v2.0.0 release notes](docs/RELEASE-2.0.0.md) for changes, migration det
 ## 2.1.0 maintenance release
 
 See the [release notes](docs/RELEASE-2.1.0.md) for dependency updates and build compatibility. Existing setup, APIs and screenshots remain applicable. Contributors run TypeScript 7 through `npm run typecheck`; tsup uses the compatible TypeScript 5.9 compiler API for package declarations.
+
+## Shared sent activity with CookieCaseKit (2.2.0)
+
+SMTP clients do not automatically share their sending history. To include case notifications in this workspace, use CookieCaseKit 1.2+ with the same trusted worker:
+
+```ts
+await cases.flushEmails(tenant);
+await cases.syncSentEmails(
+  tenant,
+  (message) => mail.recordSent({ ...message, source: 'CookieCaseKit' }),
+  100,
+);
+```
+
+This imports confirmed notifications (including existing CaseKit history), without sending again. `recordSent` accepts `to`, `subject`, `text`, optional `html`, `messageId`, ISO `sentAt` and `source`. Repeating the same receipt returns its original ID; conflicting content is rejected. Call it only on the server after confirmed transport acceptance. There is no public import route. This method is for transactional history; campaigns should use the subscriber-aware queue.
+
+Sent rows/readers show the source. Explicit resends keep the original thread reference, allowing a subsequent reply to match CaseKit. This does not automatically import the provider's Sent folder or mail sent by unrelated apps. Incoming messages remain in Inbox, and case replies also appear in the case conversation after CaseKit polls the mailbox.
+
+![CookieCaseKit email in CookieMail](docs/screenshots/shared-case-email-desktop.png)
+[Mobile view](docs/screenshots/shared-case-email-mobile.png) · [Release notes](docs/RELEASE-2.2.0.md)

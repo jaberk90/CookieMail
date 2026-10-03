@@ -669,7 +669,12 @@ export function CookieMail({
                             <td>{item.to}</td>
                             <td className="cm-date">{fullDate(item.sentAt)}</td>
                             <td>
-                              <span className="cm-badge cm-green">Accepted</span>
+                              <span className="cm-badge cm-green">
+                                Accepted
+                                {item.source && item.source !== 'CookieMail'
+                                  ? ` · ${item.source}`
+                                  : ''}
+                              </span>
                             </td>
                           </>
                         ) : (
@@ -827,7 +832,8 @@ export function CookieMail({
         <Modal title={sentMessage.subject} onClose={() => setSentMessage(null)} wide>
           <div className="cm-modal-body">
             <p className="cm-help">
-              To: {sentMessage.to} · Accepted by provider: {fullDate(sentMessage.sentAt)}
+              {sentMessage.source || 'CookieMail'} · To: {sentMessage.to} · Accepted by provider:{' '}
+              {fullDate(sentMessage.sentAt)}
             </p>
             {sentMessage.html ? (
               <iframe

@@ -214,3 +214,26 @@ test('compact cards, schedule/change/cancel, sent reader/resend and Trash confir
   await expect(page.locator('.cm-table tbody tr')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('shared case notifications appear in sent history with their source', async ({
+  page,
+}, info) => {
+  await page.goto('/');
+  await page
+    .getByRole('navigation', { name: 'Mail navigation' })
+    .getByRole('button', { name: 'Sent', exact: true })
+    .click();
+  const row = page.locator('.cm-table tbody tr').filter({ hasText: '[CS-10041] Case received' });
+  await expect(row).toContainText('CookieCaseKit');
+  await row
+    .getByRole('button', { name: '[CS-10041] Case received View sent email', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toContainText('CookieCaseKit');
+  await expect(page.getByRole('dialog')).toContainText(
+    'Reply to this email to continue the conversation.',
+  );
+  await page.screenshot({
+    path: `docs/screenshots/shared-case-email-${info.project.name}.png`,
+    fullPage: false,
+  });
+});
