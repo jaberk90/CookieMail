@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0
+
+- Add idempotent server-side imports of confirmed transactional sent messages and source labels in the UI.
+- Support CookieCaseKit notification history/backfill and preserve original threading on explicit resend.
+- Update docs and desktop/mobile screenshots. See [release notes](docs/RELEASE-2.2.0.md).
+
 ## 2.1.0
 
 - Integrate all nine open dependency PRs, including current GitHub Actions and Node, Nodemailer and Supertest types.

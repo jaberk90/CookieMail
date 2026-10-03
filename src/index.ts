@@ -311,8 +311,52 @@ export function createCookieMail(config: CookieMailConfig) {
   const receiptId = (id: string) =>
     z
       .string()
-      .regex(/^[a-f0-9-]{36}\.[0-9]{1,3}$/)
+      .regex(/^(?:[a-f0-9-]{36}\.[0-9]{1,3}|external-[a-f0-9]{64})$/)
       .parse(id);
+  /** Trusted server-only import of a confirmed transactional delivery; never sends an email. */
+  async function recordSent(input: unknown) {
+    const s = z
+      .object({
+        to: email,
+        subject: z
+          .string()
+          .min(1)
+          .max(200)
+          .refine((v) => !/[\r\n]/.test(v)),
+        text: z.string().max(30000),
+        html: z.string().max(60000).optional(),
+        messageId: z.string().regex(/^<[^<>\s]{1,990}>$/),
+        sentAt: z.string().datetime({ offset: true }),
+        source: z.string().trim().min(1).max(80),
+      })
+      .strict()
+      .parse(input);
+    const id = 'external-' + hash(s.messageId + '\n' + s.to.toLowerCase());
+    const fingerprint = hash(JSON.stringify(s));
+    await atomic(store, workspace, async (tx) => {
+      const key = 'sent-' + id,
+        old = await tx.get(key);
+      if (old) {
+        if (old.fingerprint !== fingerprint)
+          throw new HttpError(409, 'Sent receipt already exists with different content');
+        return;
+      }
+      const html = s.html ? cleanHtml(s.html) : null;
+      tx.put(key, {
+        ...s,
+        html,
+        id,
+        jobId: id,
+        fingerprint,
+        status: 'sent',
+        baseText: s.text,
+        baseHtml: html,
+        inReplyTo: s.messageId,
+        subscriberId: null,
+      });
+    });
+    return { id };
+  }
   async function sentRecord(id: string) {
     const value = await read('sent-' + receiptId(id));
     if (!value || value.status !== 'sent') throw new HttpError(404, 'Sent email not found');
@@ -329,10 +373,12 @@ export function createCookieMail(config: CookieMailConfig) {
       html: s.html ? cleanHtml(String(s.html)) : undefined,
       messageId: String(s.messageId),
       sentAt: String(s.sentAt),
+      source: typeof s.source === 'string' ? s.source : 'CookieMail',
     };
   }
   async function listSent() {
-    const out: Array<Pick<SentMessage, 'id' | 'jobId' | 'to' | 'subject' | 'sentAt'>> = [];
+    const out: Array<Pick<SentMessage, 'id' | 'jobId' | 'to' | 'subject' | 'sentAt' | 'source'>> =
+      [];
     let count = 0;
     for await (const { value: s } of documents(store, workspace, 'sent-')) {
       if (++count > 5000) throw new HttpError(413, 'Workspace exceeds the 5000-record list limit');
@@ -343,6 +389,7 @@ export function createCookieMail(config: CookieMailConfig) {
           to: String(s.to),
           subject: String(s.subject),
           sentAt: String(s.sentAt),
+          source: typeof s.source === 'string' ? s.source : 'CookieMail',
         });
     }
     return out.sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)));
@@ -715,6 +762,7 @@ export function createCookieMail(config: CookieMailConfig) {
     queue,
     flush,
     trash,
+    recordSent,
     listSent,
     getSent,
     resend,

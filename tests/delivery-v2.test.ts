@@ -400,3 +400,35 @@ test('oversized rendered snapshots fail before a send is queued', async () => {
     await f.kit.close();
   }
 });
+
+test('external transactional receipts are visible, idempotent and preserve threading on resend', async () => {
+  const f = fixture();
+  try {
+    const receipt = {
+      to: 'member@example.com',
+      subject: '[CS-00001] Case received',
+      text: 'Your case is open',
+      messageId: '<case-notice@example.com>',
+      sentAt: new Date().toISOString(),
+      source: 'CookieCaseKit',
+    };
+    const first = await f.kit.recordSent(receipt);
+    assert.deepEqual(await f.kit.recordSent(receipt), first);
+    assert.equal(f.sent.length, 0, 'importing history never sends mail');
+    assert.equal((await f.kit.listSent()).length, 1);
+    assert.equal((await f.kit.getSent(first.id)).source, 'CookieCaseKit');
+    await assert.rejects(f.kit.recordSent({ ...receipt, text: 'Changed' }), /different content/);
+    await f.kit.resend(first.id, { idempotencyKey: randomUUID() });
+    await f.kit.flush();
+    assert.equal(f.sent.length, 1);
+    assert.equal(f.sent[0].inReplyTo, receipt.messageId);
+    const other = fixture({ workspace: 'other' });
+    try {
+      await assert.rejects(other.kit.getSent(first.id), /not found/);
+    } finally {
+      await other.kit.close();
+    }
+  } finally {
+    await f.kit.close();
+  }
+});

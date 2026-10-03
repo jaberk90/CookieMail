@@ -135,6 +135,14 @@ for (const [name, subject, title, body, button] of [
       { id: 'f', kind: 'text', content: 'Made with care. Sent with a little optimism.' },
     ],
   });
+await kit.recordSent({
+  to: 'taylor@example.com',
+  subject: '[CS-10041] Case received',
+  text: 'Thanks Taylor. Your support case has been received. Reply to this email to continue the conversation.',
+  messageId: '<demo-case-10041@example.com>',
+  sentAt: new Date().toISOString(),
+  source: 'CookieCaseKit',
+});
 await mkdir('dist', { recursive: true });
 await build({
   entryPoints: ['examples/demo-client.tsx'],

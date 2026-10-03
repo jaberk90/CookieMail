@@ -76,6 +76,7 @@ export interface Subscriber {
 
 /** A per-recipient copy accepted by the provider, not a delivery/read receipt. */
 export interface SentMessage {
+  source?: string;
   id: string;
   jobId: string;
   to: string;
