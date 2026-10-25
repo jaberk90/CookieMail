@@ -1,6 +1,6 @@
 {
   "name": "cookiemail",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "An embeddable inbox, scheduled email, sent history, subscribers and visual email studio for Node.js and React.",
   "type": "module",
   "license": "MIT",
@@ -111,8 +111,8 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "imapflow": "^2.1.2",
-    "mailparser": "^3.9.32",
-    "nodemailer": "^10.0.13",
+    "mailparser": "^3.12.4",
+    "nodemailer": "^10.2.1",
     "sanitize-html": "^2.17.7",
     "zod": "^4.6.5"
   },
