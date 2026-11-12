@@ -1,6 +1,6 @@
 {
   "name": "cookiemail",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "An embeddable inbox, scheduled email, sent history, subscribers and visual email studio for Node.js and React.",
   "type": "module",
   "license": "MIT",
@@ -120,7 +120,7 @@
     "@aws-sdk/client-dynamodb": "^3.1142.0",
     "@aws-sdk/lib-dynamodb": "^3.1142.0",
     "@azure/cosmos": "^4.10.1",
-    "@google-cloud/firestore": "^9.3.0",
+    "@google-cloud/firestore": "^9.4.1",
     "pg": "^8.23.0",
     "react": "^18.2.0 || ^19.0.0"
   },
@@ -148,7 +148,7 @@
     "@aws-sdk/client-dynamodb": "^3.1142.0",
     "@aws-sdk/lib-dynamodb": "^3.1142.0",
     "@azure/cosmos": "^4.10.1",
-    "@google-cloud/firestore": "^9.3.0",
+    "@google-cloud/firestore": "^9.4.1",
     "@playwright/test": "^1.58.2",
     "@types/express": "^5.0.0",
     "@types/mailparser": "^3.4.6",

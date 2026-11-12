@@ -1,3 +1,10 @@
+## 2.2.2 (2026-11-11)
+
+### Security
+
+- Upgrade the optional Firestore adapter SDK requirement to 9.4.1 or newer, removing the vulnerable legacy glob/minimatch dependency chain.
+- Refresh the lockfile to the patched upstream dependency tree.
+
 ## 2.2.1 (2026-10-24)
 
 ### Security
